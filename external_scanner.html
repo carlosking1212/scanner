@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scanner Externo - Saída de Estoque</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #F8FAFC;
+        }
+        .scanner-container {
+            max-width: 500px;
+            margin: 2rem auto;
+            padding: 1.5rem;
+        }
+        .video-wrapper {
+            aspect-ratio: 16 / 9;
+            background-color: #1A202C;
+            border-radius: 1rem;
+            position: relative;
+            overflow: hidden;
+            border: 4px solid white;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+        }
+        .scan-corner {
+            position: absolute;
+            width: 24px;
+            height: 24px;
+            border-color: #FF6321;
+            border-width: 4px;
+            z-index: 10;
+        }
+        .top-left { top: 1rem; left: 1rem; border-right: 0; border-bottom: 0; border-top-left-radius: 4px; }
+        .top-right { top: 1rem; right: 1rem; border-left: 0; border-bottom: 0; border-top-right-radius: 4px; }
+        .bottom-left { bottom: 1rem; left: 1rem; border-right: 0; border-top: 0; border-bottom-left-radius: 4px; }
+        .bottom-right { bottom: 1rem; right: 1rem; border-left: 0; border-top: 0; border-bottom-right-radius: 4px; }
+        
+        .flash {
+            position: absolute;
+            inset: 0;
+            background-color: white;
+            opacity: 0;
+            z-index: 20;
+            pointer-events: none;
+            transition: opacity 0.2s;
+        }
+        .flash.active {
+            opacity: 0.9;
+        }
+
+        .loading-overlay {
+            position: absolute;
+            inset: 0;
+            background-color: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(4px);
+            z-index: 30;
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: white;
+        }
+        .loading-overlay.active {
+            display: flex;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid rgba(255, 99, 33, 0.2);
+            border-top-color: #FF6321;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+    </style>
+</head>
+<body>
+    <div class="scanner-container">
+        <div class="mb-6 flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-orange-50 border border-orange-100 flex items-center justify-center">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#FF6321" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>
+            </div>
+            <div>
+                <h1 class="text-lg font-extrabold text-slate-800 tracking-tight">Scanner Remoto</h1>
+                <p class="text-[10px] uppercase font-bold tracking-widest text-slate-400">Saída de Estoque Instantânea</p>
+            </div>
+        </div>
+
+        <div class="video-wrapper mb-4">
+            <div class="scan-corner top-left"></div>
+            <div class="scan-corner top-right"></div>
+            <div class="scan-corner bottom-left"></div>
+            <div class="scan-corner bottom-right"></div>
+            
+            <video id="video" class="w-full h-full object-cover" autoplay playsinline muted></video>
+            <canvas id="canvas" class="hidden"></canvas>
+            
+            <div id="flash" class="flash"></div>
+            
+            <div id="loadingOverlay" class="loading-overlay">
+                <div class="spinner mb-4"></div>
+                <p class="text-sm font-bold uppercase tracking-wider">Analisando Produto...</p>
+            </div>
+
+            <div id="cameraPrompt" class="absolute inset-0 flex flex-col items-center justify-center text-center p-6 bg-slate-900 z-10">
+                <button id="startBtn" class="px-6 py-3 rounded-xl bg-[#FF6321] text-white font-bold uppercase tracking-wider shadow-lg hover:scale-105 transition-all">
+                    Ativar Câmera
+                </button>
+            </div>
+        </div>
+
+        <button id="captureBtn" class="w-full py-4 bg-[#FF6321] hover:bg-[#E54F10] text-white font-extrabold rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-orange-500/20 transition-all uppercase text-sm tracking-wider disabled:opacity-50" disabled>
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>
+            Capturar e Dar Baixa
+        </button>
+
+        <div id="status" class="mt-4 hidden">
+            <!-- Dynamic feedback -->
+        </div>
+
+        <div class="mt-8 p-4 bg-slate-100 rounded-lg border border-slate-200">
+            <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Configuração do Servidor</label>
+            <input type="text" id="serverUrl" value="http://localhost:8080" class="w-full bg-white border border-slate-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-orange-500 outline-none">
+            <p class="text-[10px] text-slate-400 mt-2">Certifique-se que o backend está rodando e acessível neste endereço.</p>
+        </div>
+    </div>
+
+    <script>
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const flash = document.getElementById('flash');
+        const loadingOverlay = document.getElementById('loadingOverlay');
+        const cameraPrompt = document.getElementById('cameraPrompt');
+        const startBtn = document.getElementById('startBtn');
+        const captureBtn = document.getElementById('captureBtn');
+        const status = document.getElementById('status');
+        const serverUrlInput = document.getElementById('serverUrl');
+
+        let stream = null;
+        let queue = JSON.parse(localStorage.getItem('scan_queue') || '[]');
+        let isSyncing = false;
+
+        // Update queue counter on UI
+        function updateQueueUI() {
+            const count = queue.length;
+            const badge = document.getElementById('queueBadge');
+            if (count > 0) {
+                if (!badge) {
+                    const b = document.createElement('div');
+                    b.id = 'queueBadge';
+                    b.className = 'mt-2 inline-flex items-center px-3 py-1 rounded-lg bg-blue-100 text-blue-700 font-mono text-xs font-bold uppercase';
+                    status.parentNode.insertBefore(b, status);
+                }
+                document.getElementById('queueBadge').innerText = `Pendentes para Sincronizar: ${count}`;
+            } else if (badge) {
+                badge.remove();
+            }
+        }
+
+        async function startCamera() {
+            try {
+                const constraints = {
+                    video: {
+                        facingMode: { ideal: 'environment' },
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 }
+                    }
+                };
+                stream = await navigator.mediaDevices.getUserMedia(constraints);
+                video.srcObject = stream;
+                cameraPrompt.style.display = 'none';
+                captureBtn.disabled = false;
+                updateQueueUI();
+            } catch (err) {
+                console.error(err);
+                alert('Erro ao acessar câmera: ' + err.message);
+            }
+        }
+
+        function showFlash() {
+            flash.classList.add('active');
+            setTimeout(() => flash.classList.remove('active'), 250);
+        }
+
+        function playBeep() {
+            try {
+                const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                const osc = audioCtx.createOscillator();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(880, audioCtx.currentTime);
+                osc.connect(audioCtx.destination);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.15);
+            } catch (e) {}
+        }
+
+        function saveQueue() {
+            localStorage.setItem('scan_queue', JSON.stringify(queue));
+            updateQueueUI();
+        }
+
+        async function captureAndRemove() {
+            if (!stream) return;
+
+            showFlash();
+            
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0);
+            
+            const base64Image = canvas.toDataURL('image/jpeg', 0.85);
+            
+            // Add to queue instead of sending immediately
+            queue.push({
+                image: base64Image,
+                timestamp: new Date().toISOString()
+            });
+            saveQueue();
+            
+            showStatus('info', 'Foto guardada na fila. Sincronizando automaticamente...');
+            
+            // Try to sync immediately if not already syncing
+            syncQueue();
+        }
+
+        async function syncQueue() {
+            if (isSyncing || queue.length === 0) return;
+            
+            isSyncing = true;
+            const serverUrl = serverUrlInput.value.replace(/\/$/, '');
+            
+            while (queue.length > 0) {
+                const item = queue[0];
+                loadingOverlay.classList.add('active');
+                
+                try {
+                    const response = await fetch(`${serverUrl}/api/vision`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            image_base64: item.image,
+                            mode: 'remove'
+                        })
+                    });
+
+                    const data = await response.json();
+
+                    if (response.ok && data.success && data.action === 'removed') {
+                        playBeep();
+                        showStatus('success', data.local);
+                        // Remove from queue only on success
+                        queue.shift();
+                        saveQueue();
+                    } else {
+                        // If it's a business error (not found), we remove from queue to avoid infinite loop
+                        // but show error. If it's a server error, we catch below.
+                        showStatus('error', data.error || 'Produto não identificado.');
+                        queue.shift();
+                        saveQueue();
+                    }
+                } catch (err) {
+                    console.log('Servidor offline, mantendo na fila...', err);
+                    showStatus('warning', 'Servidor offline. A foto será enviada automaticamente quando a conexão voltar.');
+                    break; // Stop syncing for now, will retry in next interval
+                } finally {
+                    loadingOverlay.classList.remove('active');
+                }
+                
+                // Small delay between items to avoid overloading
+                await new Promise(r => setTimeout(r, 1000));
+            }
+            
+            isSyncing = false;
+        }
+
+        // Auto-sync every 20 seconds
+        setInterval(syncQueue, 20000);
+
+        function showStatus(type, payload) {
+            status.classList.remove('hidden');
+            if (type === 'success') {
+                status.innerHTML = `
+                    <div class="p-4 rounded-xl bg-green-50 border border-green-100 flex gap-3">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#10B981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mt-1 shrink-0"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                        <div>
+                            <h5 class="text-[10px] font-bold uppercase text-green-600 tracking-widest">BAIXA CONFIRMADA</h5>
+                            <p class="text-sm font-bold text-slate-800 mt-1">${payload.name}</p>
+                            <p class="text-xs text-slate-500">Marca: ${payload.brand} | Sabor: ${payload.flavor}</p>
+                            <div class="mt-2 inline-flex items-center px-3 py-1 rounded-lg bg-green-100 text-green-700 font-mono text-xs font-bold uppercase">
+                                Estoque: ${payload.stock} un
+                            </div>
+                        </div>
+                    </div>
+                `;
+            } else if (type === 'info') {
+                status.innerHTML = `
+                    <div class="p-4 rounded-xl bg-blue-50 border border-blue-100 flex gap-3 text-blue-800">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mt-1 shrink-0"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                        <div>
+                            <h5 class="text-[10px] font-bold uppercase tracking-widest">Status</h5>
+                            <p class="text-xs mt-1 leading-relaxed">${payload}</p>
+                        </div>
+                    </div>
+                `;
+            } else if (type === 'warning') {
+                status.innerHTML = `
+                    <div class="p-4 rounded-xl bg-yellow-50 border border-yellow-100 flex gap-3 text-yellow-800">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mt-1 shrink-0"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                        <div>
+                            <h5 class="text-[10px] font-bold uppercase tracking-widest">Aguardando Conexão</h5>
+                            <p class="text-xs mt-1 leading-relaxed">${payload}</p>
+                        </div>
+                    </div>
+                `;
+            } else {
+                status.innerHTML = `
+                    <div class="p-4 rounded-xl bg-red-50 border border-red-100 flex gap-3 text-red-800">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mt-1 shrink-0"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                        <div>
+                            <h5 class="text-[10px] font-bold uppercase tracking-widest">Aviso do Sistema</h5>
+                            <p class="text-xs mt-1 leading-relaxed">${payload}</p>
+                        </div>
+                    </div>
+                `;
+            }
+        }
+
+        startBtn.addEventListener('click', startCamera);
+        captureBtn.addEventListener('click', captureAndRemove);
+    </script>
+</body>
+</html>
