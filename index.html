@@ -11,12 +11,12 @@
             font-family: 'Inter', sans-serif;
             background-color: #F8FAFC;
         }
-        .scanner-container {
+       .scanner-container {
             max-width: 500px;
             margin: 2rem auto;
             padding: 1.5rem;
         }
-        .video-wrapper {
+       .video-wrapper {
             aspect-ratio: 16 / 9;
             background-color: #1A202C;
             border-radius: 1rem;
@@ -25,7 +25,7 @@
             border: 4px solid white;
             box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
         }
-        .scan-corner {
+       .scan-corner {
             position: absolute;
             width: 24px;
             height: 24px;
@@ -33,12 +33,12 @@
             border-width: 4px;
             z-index: 10;
         }
-        .top-left { top: 1rem; left: 1rem; border-right: 0; border-bottom: 0; border-top-left-radius: 4px; }
-        .top-right { top: 1rem; right: 1rem; border-left: 0; border-bottom: 0; border-top-right-radius: 4px; }
-        .bottom-left { bottom: 1rem; left: 1rem; border-right: 0; border-top: 0; border-bottom-left-radius: 4px; }
-        .bottom-right { bottom: 1rem; right: 1rem; border-left: 0; border-top: 0; border-bottom-right-radius: 4px; }
-        
-        .flash {
+       .top-left { top: 1rem; left: 1rem; border-right: 0; border-bottom: 0; border-top-left-radius: 4px; }
+       .top-right { top: 1rem; right: 1rem; border-left: 0; border-bottom: 0; border-top-right-radius: 4px; }
+       .bottom-left { bottom: 1rem; left: 1rem; border-right: 0; border-top: 0; border-bottom-left-radius: 4px; }
+       .bottom-right { bottom: 1rem; right: 1rem; border-left: 0; border-top: 0; border-bottom-right-radius: 4px; }
+
+       .flash {
             position: absolute;
             inset: 0;
             background-color: white;
@@ -47,11 +47,11 @@
             pointer-events: none;
             transition: opacity 0.2s;
         }
-        .flash.active {
+       .flash.active {
             opacity: 0.9;
         }
 
-        .loading-overlay {
+       .loading-overlay {
             position: absolute;
             inset: 0;
             background-color: rgba(15, 23, 42, 0.85);
@@ -63,14 +63,14 @@
             justify-content: center;
             color: white;
         }
-        .loading-overlay.active {
+       .loading-overlay.active {
             display: flex;
         }
 
         @keyframes spin {
             to { transform: rotate(360deg); }
         }
-        .spinner {
+       .spinner {
             width: 40px;
             height: 40px;
             border: 4px solid rgba(255, 99, 33, 0.2);
@@ -97,12 +97,12 @@
             <div class="scan-corner top-right"></div>
             <div class="scan-corner bottom-left"></div>
             <div class="scan-corner bottom-right"></div>
-            
+
             <video id="video" class="w-full h-full object-cover" autoplay playsinline muted></video>
             <canvas id="canvas" class="hidden"></canvas>
-            
+
             <div id="flash" class="flash"></div>
-            
+
             <div id="loadingOverlay" class="loading-overlay">
                 <div class="spinner mb-4"></div>
                 <p class="text-sm font-bold uppercase tracking-wider">Analisando Produto...</p>
@@ -120,14 +120,12 @@
             Capturar e Dar Baixa
         </button>
 
-        <div id="status" class="mt-4 hidden">
-            <!-- Dynamic feedback -->
-        </div>
+        <div id="status" class="mt-4 hidden"></div>
 
         <div class="mt-8 p-4 bg-slate-100 rounded-lg border border-slate-200">
-            <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Configuração do Servidor</label>
-            <input type="text" id="serverUrl" value="http://localhost:8080" class="w-full bg-white border border-slate-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-orange-500 outline-none">
-            <p class="text-[10px] text-slate-400 mt-2">Certifique-se que o backend está rodando e acessível neste endereço.</p>
+            <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">URL do Servidor</label>
+            <input type="text" id="serverUrl" placeholder="https://scanner.seudominio.com" class="w-full bg-white border border-slate-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-orange-500 outline-none">
+            <p class="text-[10px] text-slate-400 mt-2">Cole aqui a URL do Cloudflare Tunnel. Deve ser HTTPS.</p>
         </div>
     </div>
 
@@ -142,11 +140,16 @@
         const status = document.getElementById('status');
         const serverUrlInput = document.getElementById('serverUrl');
 
+        // Carrega URL salva ou usa padrão
+        serverUrlInput.value = localStorage.getItem('server_url') || 'https://streamgo.dpdns.org';
+        serverUrlInput.addEventListener('change', () => {
+            localStorage.setItem('server_url', serverUrlInput.value);
+        });
+
         let stream = null;
         let queue = JSON.parse(localStorage.getItem('scan_queue') || '[]');
         let isSyncing = false;
 
-        // Update queue counter on UI
         function updateQueueUI() {
             const count = queue.length;
             const badge = document.getElementById('queueBadge');
@@ -179,7 +182,7 @@
                 updateQueueUI();
             } catch (err) {
                 console.error(err);
-                alert('Erro ao acessar câmera: ' + err.message);
+                alert('Erro ao acessar câmera: ' + err.message + '\n\nLembre-se: câmera só funciona em HTTPS');
             }
         }
 
@@ -209,39 +212,37 @@
             if (!stream) return;
 
             showFlash();
-            
+
             canvas.width = video.videoWidth;
             canvas.height = video.videoHeight;
             const ctx = canvas.getContext('2d');
             ctx.drawImage(video, 0, 0);
-            
+
             const base64Image = canvas.toDataURL('image/jpeg', 0.85);
-            
-            // Add to queue instead of sending immediately
+
             queue.push({
                 image: base64Image,
                 timestamp: new Date().toISOString()
             });
             saveQueue();
-            
+
             showStatus('info', 'Foto guardada na fila. Sincronizando automaticamente...');
-            
-            // Try to sync immediately if not already syncing
             syncQueue();
         }
 
         async function syncQueue() {
             if (isSyncing || queue.length === 0) return;
-            
+
             isSyncing = true;
-            const serverUrl = serverUrlInput.value.replace(/\/$/, '');
-            
+            const baseUrl = serverUrlInput.value.replace(/\/$/, '');
+
             while (queue.length > 0) {
                 const item = queue[0];
                 loadingOverlay.classList.add('active');
-                
+
                 try {
-                    const response = await fetch(`${serverUrl}/api/vision`, {
+                    // IMPORTANTE: adiciona /remote-scanner antes de /api/vision
+                    const response = await fetch(`${baseUrl}/remote-scanner/api/vision`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
@@ -255,32 +256,27 @@
                     if (response.ok && data.success && data.action === 'removed') {
                         playBeep();
                         showStatus('success', data.local);
-                        // Remove from queue only on success
                         queue.shift();
                         saveQueue();
                     } else {
-                        // If it's a business error (not found), we remove from queue to avoid infinite loop
-                        // but show error. If it's a server error, we catch below.
                         showStatus('error', data.error || 'Produto não identificado.');
                         queue.shift();
                         saveQueue();
                     }
                 } catch (err) {
                     console.log('Servidor offline, mantendo na fila...', err);
-                    showStatus('warning', 'Servidor offline. A foto será enviada automaticamente quando a conexão voltar.');
-                    break; // Stop syncing for now, will retry in next interval
+                    showStatus('warning', 'Servidor offline. Tentando novamente em 20s...');
+                    break;
                 } finally {
                     loadingOverlay.classList.remove('active');
                 }
-                
-                // Small delay between items to avoid overloading
+
                 await new Promise(r => setTimeout(r, 1000));
             }
-            
+
             isSyncing = false;
         }
 
-        // Auto-sync every 20 seconds
         setInterval(syncQueue, 20000);
 
         function showStatus(type, payload) {
@@ -334,6 +330,7 @@
 
         startBtn.addEventListener('click', startCamera);
         captureBtn.addEventListener('click', captureAndRemove);
+        updateQueueUI();
     </script>
 </body>
 </html>
